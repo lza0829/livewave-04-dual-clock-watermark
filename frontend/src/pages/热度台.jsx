@@ -12,7 +12,7 @@ export default function 热度台() {
     <div>
       <h1 className="题">热度台</h1>
       <p className="述">
-        这里不是装载金库台。主路径是：事件按<strong>事件时</strong>推进水位 → 水位越过窗止则<strong>关闭热度窗</strong> →
+        这里不是装载金库台。主路径是：事件按<strong>全局单一时钟口径</strong>（事件时或处理时）推进水位 → 水位越过窗止则<strong>关闭热度窗</strong> →
         允许迟到内修正发<strong>撤回单</strong> → 越过窗止+迟到则进<strong>旁路匣</strong> → 最后做窗合计互证。
       </p>
       <div className="阶条">

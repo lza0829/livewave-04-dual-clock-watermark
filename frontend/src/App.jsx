@@ -26,7 +26,7 @@ export default function App() {
       <header className="顶栏">
         <div className="顶上行">
           <div className="牌名">播浪</div>
-          <div className="牌骨">事件时抬水位 → 关热度窗 → 迟到撤回 / 超迟旁路 → 窗互证</div>
+          <div className="牌骨">单一口径抬水位（事件时/处理时）→ 关热度窗 → 迟到撤回 / 超迟旁路 → 窗互证</div>
         </div>
         <nav className="管线">
           {主链.map(([to, l]) => (

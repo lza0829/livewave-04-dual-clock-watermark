@@ -3,6 +3,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from app.db import 夹具目录, 连接
+from app.modules import 双钟水位线
 from app.services import 装载, 贯验, 目录
 
 路由 = APIRouter(prefix="/api")
@@ -10,7 +11,12 @@ from app.services import 装载, 贯验, 目录
 
 class 装载请求(BaseModel):
     批次编号: str = ""
+    尝试切换口径: str = ""
     事件: list = Field(default_factory=list)
+
+
+class 口径请求(BaseModel):
+    口径: str
 
 
 @路由.get("/健康")
@@ -69,6 +75,30 @@ def 列水位线():
     conn = 连接()
     try:
         return [dict(r) for r in conn.execute("SELECT * FROM 水位线 ORDER BY 房间键")]
+    finally:
+        conn.close()
+
+
+@路由.get("/双钟水位")
+def 双钟水位():
+    """双钟水位只读接口：房间、（按口径的）事件时水位或处理时水位、口径、valid。"""
+    conn = 连接()
+    try:
+        return 双钟水位线.双钟视图(conn)
+    finally:
+        conn.close()
+
+
+@路由.post("/口径")
+def 切口径(体: 口径请求):
+    """全局时钟口径切换：失败闭——已有流数据拒绝，仅全空可原子切换。"""
+    conn = 连接()
+    try:
+        成, 消息 = 双钟水位线.切换口径(conn, 体.口径)
+        if not 成:
+            raise HTTPException(409, 消息)
+        conn.commit()
+        return {"口径": 双钟水位线.全局口径(conn), "消息": 消息}
     finally:
         conn.close()
 

@@ -34,7 +34,10 @@ CREATE TABLE IF NOT EXISTS 装载批次 (
 );
 CREATE TABLE IF NOT EXISTS 水位线 (
   房间键 TEXT PRIMARY KEY REFERENCES 直播间(房间键),
-  事件时水位 TEXT NOT NULL,
+  口径 TEXT NOT NULL DEFAULT '事件时',
+  水位 TEXT NOT NULL,
+  审计事件时 TEXT NOT NULL DEFAULT '',
+  审计处理时 TEXT NOT NULL DEFAULT '',
   允许迟到秒 INTEGER NOT NULL DEFAULT 30,
   更新处理时 TEXT NOT NULL
 );
@@ -88,25 +91,45 @@ def 此刻() -> str:
 def 初始化库() -> None:
     conn = 连接()
     conn.executescript(建表)
-    if conn.execute("SELECT COUNT(*) AS c FROM 站规").fetchone()["c"] == 0:
-        for k, v in {
-            "站名": "播浪",
-            "窗长秒": "60",
-            "允许迟到秒": "30",
-            "水位推进策略": "事件时最大值",
-            "关窗条件": "水位>=窗止即关闭发射",
-            "旁路条件": "水位>=窗止+允许迟到",
-            "骨架": "互动事件入流→事件时间水位线推进→热度窗关闭发射→迟到修正撤回→窗输出与撤回互证",
-        }.items():
-            conn.execute("INSERT INTO 站规(键, 值) VALUES (?, ?)", (k, v))
+    _迁移水位线(conn)
+    规 = {
+        "站名": "播浪",
+        "窗长秒": "60",
+        "允许迟到秒": "30",
+        "时钟口径": "事件时",
+        "水位推进策略": "全局单一口径：口径=事件时→水位=已见最大事件时（处理时仅审计）；口径=处理时→水位=已见最大处理时（事件时仅对齐窗键）",
+        "关窗条件": "权威水位>=窗止即关闭发射（只看口径选定之钟）",
+        "旁路条件": "权威水位>=窗止+允许迟到",
+        "口径切换": "失败闭：已有流数据禁止切换；仅系统全空可原子切换并整票重放",
+        "骨架": "互动事件入流→事件时间水位线推进→热度窗关闭发射→迟到修正撤回→窗输出与撤回互证",
+    }
+    for k, v in 规.items():
+        conn.execute("INSERT OR IGNORE INTO 站规(键, 值) VALUES (?, ?)", (k, v))
     if conn.execute("SELECT COUNT(*) AS c FROM 直播间").fetchone()["c"] == 0:
         conn.execute(
             "INSERT INTO 直播间(房间键, 标题, 主播, 开播事件时, 状态) VALUES (?,?,?,?,?)",
             ("房A", "晚间热聊", "主播小浪", "2026-11-22T12:00:00Z", "直播中"),
         )
         conn.execute(
-            "INSERT INTO 水位线(房间键, 事件时水位, 允许迟到秒, 更新处理时) VALUES (?,?,?,?)",
-            ("房A", "2026-11-22T12:00:00Z", 30, 此刻()),
+            "INSERT INTO 水位线(房间键, 口径, 水位, 审计事件时, 审计处理时, 允许迟到秒, 更新处理时) VALUES (?,?,?,?,?,?,?)",
+            ("房A", "事件时", "2026-11-22T12:00:00Z", "", "", 30, 此刻()),
         )
     conn.commit()
     conn.close()
+
+
+def _迁移水位线(conn) -> None:
+    """老库水位线只有「事件时水位」一列：搬入单权威水位新结构（口径=事件时）。"""
+    列 = {r["name"] for r in conn.execute("PRAGMA table_info(水位线)")}
+    if "水位" in 列:
+        return
+    conn.execute("ALTER TABLE 水位线 ADD COLUMN 口径 TEXT NOT NULL DEFAULT '事件时'")
+    conn.execute("ALTER TABLE 水位线 ADD COLUMN 水位 TEXT NOT NULL DEFAULT ''")
+    conn.execute("ALTER TABLE 水位线 ADD COLUMN 审计事件时 TEXT NOT NULL DEFAULT ''")
+    conn.execute("ALTER TABLE 水位线 ADD COLUMN 审计处理时 TEXT NOT NULL DEFAULT ''")
+    if "事件时水位" in 列:
+        conn.execute("UPDATE 水位线 SET 水位=事件时水位, 审计事件时=事件时水位")
+        try:
+            conn.execute("ALTER TABLE 水位线 DROP COLUMN 事件时水位")
+        except Exception:
+            pass
